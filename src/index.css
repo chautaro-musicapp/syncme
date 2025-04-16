@@ -1,0 +1,134 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 15%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 260 67% 60%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 260 54% 80%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 260 54% 40%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 260 67% 60%;
+
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+  }
+}
+
+@layer components {
+  .gradient-bg {
+    @apply bg-gradient-to-b from-syncme-dark/90 via-syncme-deep-blue to-syncme-darkest;
+    background-image: radial-gradient(circle at 50% 50%, rgba(138, 91, 246, 0.15) 0%, rgba(25, 33, 59, 0) 50%),
+                      linear-gradient(180deg, hsl(222, 47%, 11%) 0%, hsl(230, 44%, 16%) 50%, hsl(240, 60%, 8%) 100%);
+  }
+  
+  .space-bg {
+    background-image: 
+      radial-gradient(circle at 20% 30%, rgba(138, 91, 246, 0.15) 0%, rgba(25, 33, 59, 0) 50%),
+      radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.12) 0%, rgba(25, 33, 59, 0) 40%),
+      linear-gradient(180deg, hsl(222, 47%, 11%) 0%, hsl(230, 44%, 16%) 50%, hsl(240, 60%, 8%) 100%);
+    @apply bg-syncme-darkest;
+  }
+  
+  .btn-primary {
+    @apply bg-syncme-light-purple hover:bg-syncme-purple text-white transition-all duration-300 rounded-full shadow-[0_0_15px_rgba(155,135,245,0.5)];
+  }
+
+  .btn-secondary {
+    @apply bg-syncme-orange hover:bg-syncme-orange/90 text-white transition-all duration-300 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.3)];
+  }
+
+  .card-glow {
+    @apply shadow-[0_0_20px_rgba(155,135,245,0.2)] hover:shadow-[0_0_30px_rgba(155,135,245,0.4)] transition-all duration-300;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+  
+  .text-glow {
+    text-shadow: 0 0 10px rgba(155, 135, 245, 0.7);
+  }
+  
+  .emoji-bg {
+    @apply flex items-center justify-center rounded-full w-12 h-12 bg-syncme-light-purple/20 backdrop-blur-md;
+  }
+  
+  .cosmic-dots {
+    position: relative;
+  }
+  
+  .cosmic-dots::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: radial-gradient(circle at 10% 20%, white 1px, transparent 1px),
+                      radial-gradient(circle at 20% 40%, white 1px, transparent 1px),
+                      radial-gradient(circle at 30% 30%, white 1px, transparent 1px),
+                      radial-gradient(circle at 40% 70%, white 1px, transparent 1px),
+                      radial-gradient(circle at 60% 50%, white 1px, transparent 1px),
+                      radial-gradient(circle at 70% 30%, white 1px, transparent 1px),
+                      radial-gradient(circle at 80% 80%, white 1px, transparent 1px),
+                      radial-gradient(circle at 90% 60%, white 1px, transparent 1px);
+    background-size: 300px 300px;
+    opacity: 0.15;
+    z-index: 0;
+    pointer-events: none;
+  }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-slow {
+  animation: float 8s ease-in-out infinite;
+}
+
+.float-fast {
+  animation: float 4s ease-in-out infinite;
+}
+
