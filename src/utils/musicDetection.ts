@@ -285,7 +285,7 @@ export const verifyYouTubeMatch = async (
   if (youtubeId === 'dQw4w9WgXcQ') return false;
   
   try {
-    const response = await fetch(`https://yt-api-proxy.glitch.me/videos?id=${youtubeId}&part=snippet,contentDetails`);
+    const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${youtubeId}&part=snippet,contentDetails&key=AIzaSyBvap_uw_CwmE4eWxjKoPgiVQZ3ioQjO4M`);//`https://yt-api-proxy.glitch.me/videos?id=${youtubeId}&part=snippet,contentDetails`
     if (response.ok) {
       const data = await response.json();
       if (data?.items?.length > 0) {
@@ -370,7 +370,7 @@ export const recognizeMusic = async (audioBlob: Blob): Promise<any> => {
   try {
     const formData = new FormData();
     formData.append('file', audioBlob);
-    formData.append('api_token', "872cb77c2ee7145396020c4b7648501a");
+    formData.append('api_token', "613c8af850a263d2711d0267cdde41aa");//872cb77c2ee7145396020c4b7648501a
     formData.append('return', 'apple_music,spotify');
 
     const response = await fetch('https://api.audd.io/', { method: 'POST', body: formData });
