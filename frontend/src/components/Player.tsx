@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Music, Video, ExternalLink } from 'lucide-react';
 import Header from './Header';
 import YouTube from 'react-youtube';
 import { toast } from "@/hooks/use-toast";
-import { searchYouTubeVideo, verifyYouTubeMatch } from '@/utils/musicDetection';
+// import { SocketContext } from '@/context/socket';
+import { useSocket } from '@/context/socket';
 
 interface PlayerProps {
   song: {
@@ -19,6 +21,7 @@ interface PlayerProps {
   onBack: () => void;
 }
 
+
 const Player: React.FC<PlayerProps> = ({ 
   song, 
   isHost, 
@@ -26,29 +29,121 @@ const Player: React.FC<PlayerProps> = ({
   participants = 1,
   onBack 
 }) => {
+
+  const { socket } = useSocket(); 
   const [videoId, setVideoId] = useState<string | undefined>(song.youtubeId);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [isSynced, setIsSynced] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [videoMode, setVideoMode] = useState(true);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [songTitle, setSongTitle] = useState('');
+  const [roomUsers, setRoomUsers] = useState(participants);
   const playerRef = useRef<any>(null);
   const [containerWidth, setContainerWidth] = useState(window.innerWidth);
-  const [retryCount, setRetryCount] = useState(0);
-  
-  useEffect(() => {
-    const handleResize = () => {
-      setContainerWidth(window.innerWidth);
+
+  const [messages, setMessages] = useState<Array<{
+    sender: string;
+    content: string;
+    timestamp: Date;
+  }>>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [username] = useState(() => `User${Math.floor(Math.random() * 1000)}`);
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!newMessage.trim() || !socket || !roomCode) return;
+
+    const messageData = {
+      roomCode,
+      sender: username,
+      content: newMessage.trim()
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    // Optimistic update
+    setMessages(prev => [...prev, {
+      ...messageData,
+      timestamp: new Date()
+    }]);
+    
+    socket.emit('send_message', messageData);
+    setNewMessage('');
+  };
 
-  const hasFetchedVideoRef = useRef(false);
+  // Socket.io integration
+  useEffect(() => {
+    if (!socket || !roomCode) return;
+
+    // Join room
+    socket.emit('join_room', { roomCode, isHost });
+
+    // Listen for room updates
+    socket.on('room_update', (users) => {
+      setRoomUsers(users);
+    });
+
+    // Host events
+    if (isHost) {
+      socket.on('request_sync', (clientId) => {
+        socket.emit('host_update', {
+          roomCode,
+          clientId,
+          isPlaying,
+          currentTime: playerRef.current?.getCurrentTime() || 0
+        });
+      });
+    } 
+    // Client events
+    else {
+      socket.on('host_play', () => {
+        playerRef.current?.playVideo();
+        setIsPlaying(true);
+      });
+
+      socket.on('host_pause', () => {
+        playerRef.current?.pauseVideo();
+        setIsPlaying(false);
+      });
+
+      socket.on('host_seek', (time) => {
+        playerRef.current?.seekTo(time, true);
+        setCurrentTime(time);
+      });
+
+      socket.on('force_sync', ({ isPlaying, currentTime }) => {
+        playerRef.current?.seekTo(currentTime, true);
+        if (isPlaying) {
+          playerRef.current?.playVideo();
+        } else {
+          playerRef.current?.pauseVideo();
+        }
+        setIsSynced(true);
+      });
+    }
+
+    return () => {
+      socket?.off('room_update');
+      socket?.off('host_play');
+      socket?.off('host_pause');
+      socket?.off('host_seek');
+      socket?.emit('leave_room', roomCode);
+    };
+  }, [socket, roomCode, isHost]);
+
+  // Host time sync
+  useEffect(() => {
+    if (!isHost || !socket || !roomCode) return;
+
+    const syncInterval = setInterval(() => {
+      const currentTime = playerRef.current?.getCurrentTime() || 0;
+      socket.emit('time_update', { roomCode, currentTime });
+    }, 5000);
+
+    return () => clearInterval(syncInterval);
+  }, [isHost, socket, roomCode]);
 
   useEffect(() => {
     setProgress(0);
@@ -60,86 +155,15 @@ const Player: React.FC<PlayerProps> = ({
     if (song.youtubeId && song.youtubeId !== videoId) {
       setVideoId(song.youtubeId);
     }
-  
-    hasFetchedVideoRef.current = false;
-  
-    // if (!song.youtubeId && !hasFetchedVideoRef.current) {
-    //   hasFetchedVideoRef.current = true;
-    //   fetchVideoId();
-    // }
-    console.log("[Effect Triggered] Title:", song.title, "YouTube ID:", song.youtubeId);
-
   }, [song.title, song.artist, song.youtubeId]);
-  
-
-  const fetchVideoId = async () => {
-    if (!song || !song.title || !song.artist) {
-      return;
-    }
-
-    setIsVerifying(true);
-    try {
-      const searchQueries = [
-        `${song.artist} - ${song.title} official audio`,
-        `${song.artist} - ${song.title} official video`,
-        `${song.artist} - ${song.title} lyrics`,
-        `${song.title} by ${song.artist}`
-      ];
-      
-      let foundVideoId = null;
-      
-      for (const query of searchQueries) {
-        if (foundVideoId) break;
-        
-        const newId = await searchYouTubeVideo(query, song.artist, song.title);
-        
-        if (newId && newId !== 'dQw4w9WgXcQ') {
-          const isVerified = await verifyYouTubeMatch(newId, song.artist, song.title);
-          
-          if (isVerified) {
-            foundVideoId = newId;
-            console.log(`Found verified match with query "${query}": ${newId}`);
-            break;
-          } else if (!foundVideoId) {
-            foundVideoId = newId;
-          }
-        }
-      }
-      
-      if (foundVideoId) {
-        setVideoId(foundVideoId);
-        toast({
-          title: 'Song Verified',
-          description: 'Playing the correct video from YouTube',
-        });
-      } else {
-        toast({
-          title: 'Notice',
-          description: 'Could not find an exact match for this song',
-          variant: 'default',
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching YouTube ID:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to search for the song',
-        variant: 'destructive',
-      });
-      
-      if (retryCount < 2) {
-        setRetryCount(prevCount => prevCount + 1);
-        fetchVideoId();
-      }
-    } finally {
-      setIsVerifying(false);
-    }
-  };
 
   const onPlayerReady = (event: any) => {
-    console.log("YouTube player ready");
     playerRef.current = event.target;
     
+    if (!isHost) {
+      socket?.emit('request_sync', roomCode);
+    }
+
     if (isPlaying) {
       try {
         playerRef.current.playVideo();
@@ -147,7 +171,7 @@ const Player: React.FC<PlayerProps> = ({
         console.error("Error starting playback:", err);
       }
     }
-    
+
     const intervalId = setInterval(() => {
       if (playerRef.current) {
         try {
@@ -155,8 +179,7 @@ const Player: React.FC<PlayerProps> = ({
           const duration = playerRef.current.getDuration() || 0;
           setCurrentTime(currentTime);
           setDuration(duration);
-          const progressPercent = (currentTime / duration) * 100;
-          setProgress(progressPercent);
+          setProgress((currentTime / duration) * 100);
         } catch (err) {
           console.error("Error updating progress:", err);
         }
@@ -177,25 +200,6 @@ const Player: React.FC<PlayerProps> = ({
           const videoData = playerRef.current.getVideoData();
           if (videoData && videoData.title) {
             setSongTitle(videoData.title);
-            console.log("Now playing:", videoData.title);
-            
-            const videoTitle = videoData.title.toLowerCase();
-            const expectedArtist = song.artist.toLowerCase();
-            const expectedTitle = song.title.toLowerCase();
-            
-            const artistMatches = videoTitle.includes(expectedArtist);
-            const titleMatches = videoTitle.includes(expectedTitle);
-            
-            if (!artistMatches && !titleMatches) {
-              console.warn("Video title doesn't match expected song:", videoData.title);
-              toast({
-                title: "Song Mismatch Warning",
-                description: `Playing closest match to "${song.artist} - ${song.title}"`,
-                variant: "default"
-              });
-              
-              // fetchVideoId();
-            }
           }
         } catch (e) {
           console.log("Couldn't get video data:", e);
@@ -210,30 +214,29 @@ const Player: React.FC<PlayerProps> = ({
 
   const onPlayerError = (event: any) => {
     console.error("YouTube player error:", event);
-    
     toast({
       title: "Playback Error",
       description: "Looking for an alternative source...",
       variant: "default"
     });
-    
-    // fetchVideoId();
   };
 
   const togglePlayPause = () => {
+    if (!isHost) return;
+
     if (playerRef.current) {
       try {
         if (isPlaying) {
           playerRef.current.pauseVideo();
+          socket?.emit('pause', roomCode);
         } else {
           playerRef.current.playVideo();
+          socket?.emit('play', roomCode);
         }
         setIsPlaying(!isPlaying);
       } catch (error) {
         console.error("Error toggling play/pause:", error);
       }
-    } else {
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -261,6 +264,43 @@ const Player: React.FC<PlayerProps> = ({
     }
   };
 
+  // Add this inside your main socket useEffect, after the existing socket.on() calls
+useEffect(() => {
+  if (!socket) return;
+
+  // ... existing socket code ...
+
+  // Chat message handlers
+  const handleReceiveMessage = (message: {
+    sender: string;
+    content: string;
+    timestamp: Date;
+  }) => {
+    setMessages(prev => [...prev, message]);
+  };
+
+  const handleChatHistory = (history: Array<{
+    sender: string;
+    content: string;
+    timestamp: Date;
+  }>) => {
+    setMessages(history);
+  };
+
+  socket.on('receive_message', handleReceiveMessage);
+  socket.on('chat_history', handleChatHistory);
+
+  if (roomCode) {
+    socket.emit('request_chat_history', roomCode);
+  }
+
+  return () => {
+    // ... existing cleanup ...
+    socket.off('receive_message', handleReceiveMessage);
+    socket.off('chat_history', handleChatHistory);
+  };
+}, [socket, roomCode]); // Add roomCode to dependency array
+
   return (
     <div className="flex flex-col h-full space-bg cosmic-dots animate-fade-in">
       <Header title={roomCode ? `Room: ${roomCode}` : "Now Playing 🎵"} showBackButton={true} onBackClick={onBack} />
@@ -271,18 +311,27 @@ const Player: React.FC<PlayerProps> = ({
             <div className="emoji-bg mr-2 w-8 h-8">
               <span className="text-lg">👥</span>
             </div>
-            <span className="text-sm text-blue-200">{participants} listener{participants !== 1 ? 's' : ''}</span>
+            <span className="text-sm text-blue-200">{roomUsers} listener{roomUsers !== 1 ? 's' : ''}</span>
           </div>
-          {isHost && <span className="text-xs bg-syncme-orange px-2 py-1 rounded-full">🎮 Host</span>}
-          <button 
-            onClick={() => setShowChat(!showChat)}
-            className="flex items-center text-sm text-blue-200"
-          >
-            <div className="emoji-bg mr-2 w-8 h-8">
-              <span className="text-lg">💬</span>
+          <div className="flex items-center gap-4">
+            {isHost && <span className="text-xs bg-syncme-orange px-2 py-1 rounded-full">🎮 Host</span>}
+            <div className="text-xs">
+              {isSynced ? (
+                <span className="text-green-400">✔ Synced</span>
+              ) : (
+                <span className="text-yellow-400 animate-pulse">⟳ Syncing</span>
+              )}
             </div>
-            Chat
-          </button>
+            <button 
+              onClick={() => setShowChat(!showChat)}
+              className="flex items-center text-sm text-blue-200"
+            >
+              <div className="emoji-bg mr-2 w-8 h-8">
+                <span className="text-lg">💬</span>
+              </div>
+              Chat
+            </button>
+          </div>
         </div>
       )}
       
@@ -292,14 +341,7 @@ const Player: React.FC<PlayerProps> = ({
         <div className="absolute bottom-[20%] left-[20%] text-xl opacity-10 float-fast">🎧</div>
         
         <div className="w-full mb-6 overflow-hidden rounded-lg shadow-[0_0_30px_rgba(155,135,245,0.2)] border border-syncme-light-purple/10">
-          {isVerifying ? (
-            <div className="flex items-center justify-center w-full h-48 bg-syncme-dark/80">
-              <div className="text-center">
-                <div className="animate-spin inline-block w-8 h-8 border-4 border-syncme-light-purple border-t-transparent rounded-full mb-2"></div>
-                <p className="text-blue-200">Finding the best match...</p>
-              </div>
-            </div>
-          ) : videoId ? (
+          {videoId ? (
             videoMode ? (
               <div className="w-full" style={{ height: playerHeight }}>
                 <YouTube
@@ -382,69 +424,89 @@ const Player: React.FC<PlayerProps> = ({
           </div>
           
           <div className="flex items-center justify-center space-x-8">
-            <button className="text-blue-200/70 hover:text-white transition-colors">
+            <button 
+              className={`text-blue-200/70 hover:text-white transition-colors ${!isHost ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!isHost}
+            >
               <SkipBack size={28} />
             </button>
             
             <button 
               onClick={togglePlayPause}
-              className="w-16 h-16 rounded-full bg-syncme-light-purple flex items-center justify-center text-white hover:bg-syncme-purple transition-colors shadow-[0_0_20px_rgba(155,135,245,0.5)]"
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-white transition-colors shadow-[0_0_20px_rgba(155,135,245,0.5)] ${
+                isHost 
+                  ? 'bg-syncme-light-purple hover:bg-syncme-purple cursor-pointer'
+                  : 'bg-gray-500 cursor-not-allowed'
+              }`}
+              disabled={!isHost}
             >
-              {isPlaying ? (
-                <Pause size={30} />
-              ) : (
-                <Play size={30} />
-              )}
+              {isPlaying ? <Pause size={30} /> : <Play size={30} />}
             </button>
             
-            <button className="text-blue-200/70 hover:text-white transition-colors">
+            <button 
+              className={`text-blue-200/70 hover:text-white transition-colors ${!isHost ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!isHost}
+            >
               <SkipForward size={28} />
             </button>
           </div>
         </div>
       </div>
-      
-      {showChat && (
-        <div className="fixed inset-0 z-50 space-bg cosmic-dots animate-slide-up flex flex-col">
-          <Header title="Room Chat 💬" showBackButton={false} />
-          
-          <div className="flex-1 p-4 overflow-y-auto">
-            <div className="bg-syncme-dark/40 backdrop-blur-md rounded-lg p-4 border border-syncme-light-purple/10 mb-4">
-              <div className="text-xs text-blue-200/50 mb-1">System</div>
-              <p className="text-blue-200">Welcome to the chat room! 👋</p>
-            </div>
-            
-            <div className="bg-syncme-dark/40 backdrop-blur-md rounded-lg p-4 border border-syncme-light-purple/10 mb-4 ml-auto max-w-[80%]">
-              <div className="text-xs text-blue-200/50 mb-1">You</div>
-              <p className="text-blue-200">This song is awesome! 🔥</p>
-            </div>
-            
-            <div className="bg-syncme-dark/40 backdrop-blur-md rounded-lg p-4 border border-syncme-light-purple/10 mb-4">
-              <div className="text-xs text-blue-200/50 mb-1">User123</div>
-              <p className="text-blue-200">Yeah! Love this track 💃</p>
-            </div>
+
+    {showChat && (
+  <div className="fixed inset-0 z-50 space-bg cosmic-dots animate-slide-up flex flex-col">
+    <Header title="Room Chat 💬" showBackButton={false} />
+    
+    <div className="flex-1 p-4 overflow-y-auto">
+      {messages.map((message) => (
+        <div 
+          key={message.timestamp.getTime()} // Use timestamp as unique key
+          className={`bg-syncme-dark/40 backdrop-blur-md rounded-lg p-4 border border-syncme-light-purple/10 mb-4 ${
+            message.sender === username ? 'ml-auto max-w-[80%] border-syncme-light-purple/30' : ''
+          } transition-all duration-200`}
+        >
+          <div className="flex items-center justify-between text-xs text-blue-200/50 mb-1">
+            <span>{message.sender === username ? 'You' : message.sender}</span>
+            <span className="text-xs text-blue-200/30">
+              {new Date(message.timestamp).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </span>
           </div>
-          
-          <div className="p-4 bg-syncme-dark/80 backdrop-blur-lg border-t border-syncme-light-purple/10">
-            <div className="flex">
-              <input 
-                type="text" 
-                placeholder="Type a message..." 
-                className="flex-1 p-3 rounded-l-lg bg-syncme-dark/50 text-white border border-syncme-light-purple/20 focus:outline-none focus:ring-1 focus:ring-syncme-light-purple/50"
-              />
-              <button className="px-4 rounded-r-lg bg-syncme-light-purple text-white hover:bg-syncme-purple transition-colors">
-                Send
-              </button>
-            </div>
-            <button 
-              onClick={() => setShowChat(false)}
-              className="w-full mt-4 py-2 text-blue-200/70 hover:text-white bg-syncme-dark/40 rounded-lg border border-syncme-light-purple/10"
-            >
-              Close Chat
-            </button>
-          </div>
+          <p className="text-blue-200 break-words">{message.content}</p>
         </div>
-      )}
+      ))}
+    </div>
+
+    <div className="p-4 bg-syncme-dark/80 backdrop-blur-lg border-t border-syncme-light-purple/10">
+      <form onSubmit={handleSendMessage} className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Type a message..."
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          className="flex-1 p-3 rounded-lg bg-syncme-dark/50 text-white border border-syncme-light-purple/20 focus:outline-none focus:ring-1 focus:ring-syncme-light-purple/50"
+          maxLength={500}
+          aria-label="Type your message"
+        />
+        <button
+          type="submit"
+          className="px-6 py-3 rounded-lg bg-syncme-light-purple text-white hover:bg-syncme-purple transition-colors disabled:opacity-50 flex items-center justify-center"
+          disabled={!newMessage.trim()}
+        >
+          <span>Send</span>
+        </button>
+      </form>
+      <button 
+        onClick={() => setShowChat(false)}
+        className="w-full mt-4 py-2 text-blue-200/70 hover:text-white bg-syncme-dark/40 rounded-lg border border-syncme-light-purple/10 transition-colors"
+      >
+        Close Chat
+      </button>
+    </div>
+  </div>
+)}
     </div>
   );
 };

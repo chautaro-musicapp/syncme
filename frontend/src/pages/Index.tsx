@@ -13,6 +13,7 @@ import { toast } from '@/hooks/use-toast';
 import { verifyYouTubeMatch, searchYouTubeVideo } from '@/utils/musicDetection';
 // import { AudioRecognizer } from '@/utils/audioRecognizer';
 import { AudioRecognizer } from '@/utils/audioRecognizer'; // Ensure this is the correct path to your AudioRecognizer class
+import { io, Socket } from 'socket.io-client';
 
 enum AppState {
   HOME,
@@ -24,6 +25,7 @@ enum AppState {
 
 const Index = () => {
   const [appState, setAppState] = useState<AppState>(AppState.HOME);
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [recognizedSong, setRecognizedSong] = useState<any | null>(null);
   const [roomCode, setRoomCode] = useState<string | undefined>();
@@ -57,6 +59,16 @@ const Index = () => {
       }
     };
   }, []);
+
+  // Add this near other useEffect hooks
+    useEffect(() => {
+      const newSocket = io('http://localhost:8000'); // Replace with your server URL
+      setSocket(newSocket);
+
+      return () => {
+        newSocket.disconnect();
+      };
+    }, []);
   
   // Start the detection process
   const handleDetect = () => {
@@ -450,11 +462,52 @@ const Index = () => {
   };
   
   const handleJoinRoom = (code: string) => {
-    setRoomCode(code);
-    setIsHost(false);
-    setAppState(AppState.PLAYING);
-  };
+    const trimmedCode = code.trim().toUpperCase();
   
+    if (!trimmedCode) {
+      toast({
+        title: "Room Code Required",
+        description: "Please enter a valid room code.",
+        variant: "destructive"
+      });
+      return;
+    }
+  
+    // Save code and prepare state  
+    setRoomCode(trimmedCode);
+    setIsHost(false);
+  
+    // Listen for invalid room event from server
+    socket?.once('invalid_room', () => {
+      toast({
+        title: "Invalid Room",
+        description: "This room code does not exist or has expired.",
+        variant: "destructive"
+      });
+      setRoomCode(undefined);
+      setAppState(AppState.HOME);
+    });
+  
+    // Add this missing emission to actually join the room
+    socket?.emit('join_room', trimmedCode); // <-- This is crucial
+    
+    // Remove the immediate state transition
+    // setAppState(AppState.PLAYING); <-- This is incorrect
+  };
+  // Add this in your socket setup/effects
+      useEffect(() => {
+        if (!socket) return;
+
+        const handleRoomJoined = () => {
+          setAppState(AppState.PLAYING);
+        };
+
+        socket.on('room_joined', handleRoomJoined);
+        return () => {
+          socket.off('room_joined', handleRoomJoined);
+        };
+      }, [socket]);
+        
   const handleBackToHome = () => {
     setAppState(AppState.HOME);
     setRoomCode(undefined);
@@ -501,13 +554,28 @@ const Index = () => {
               />
             </div>
             
-            <div className="mt-12 text-center animate-fade-in bg-white/5 backdrop-blur-md p-5 rounded-xl border border-white/10 max-w-xs">
+            <div className="mt-4 text-center animate-fade-in bg-white/5 backdrop-blur-md p-3 rounded-xl border border-white/10 max-w-xs">
               <h2 className="font-medium mb-2 text-blue-200">How it works</h2>
               <ol className="text-blue-200/70 space-y-2 text-sm text-left">
                 <li className="flex items-center"><span className="mr-2 bg-syncme-light-purple/20 w-6 h-6 rounded-full flex items-center justify-center">1</span> Tap to detect music playing around you 🎵</li>
                 <li className="flex items-center"><span className="mr-2 bg-syncme-light-purple/20 w-6 h-6 rounded-full flex items-center justify-center">2</span> Choose to play solo or vibe with friends 👥</li>
                 <li className="flex items-center"><span className="mr-2 bg-syncme-light-purple/20 w-6 h-6 rounded-full flex items-center justify-center">3</span> Create or join a room to sync music 🚀</li>
               </ol>
+            </div>
+            <div className="relative m-4 flex">
+              <input 
+                type="text" 
+                placeholder="Enter room code" 
+                value={roomCode || ''} 
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase().trim())} 
+                className="bg-syncme-light-purple/20 p-2 rounded-l-lg font-mono  text-center text-white border-r border-syncme-light-purple/10"
+              />
+              <button 
+                onClick={() => roomCode && handleJoinRoom(roomCode)} 
+                className="bg-syncme-light-purple p-2 rounded-r-lg text-white hover:bg-syncme-purple transition-colors"
+              >
+                Join Party
+              </button>
             </div>
           </main>
         </>
