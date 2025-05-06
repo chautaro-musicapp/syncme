@@ -1,18 +1,28 @@
 import express from "express";
 import cors from "cors";
+import { initSocket } from "./socket/socket.js"; // Import the initSocket function from socket.tsx
+import connectToMongoDb from "./connectTodb/connectToMongoDb.js";
 
-let app = express();
+const app = express();
 app.use(cors());
 
 app.use(express.json());
 
+const port = 8000; // Define the port number
 
 connectToMongoDb();
 
-app.listen(8000, () => {
-  console.log("application is running at port 8000");
+const server = initSocket(app); // Initialize the Socket.IO server with the Express app
+
+server.listen(port, () => {
+  console.log(`Application is running on port ${port}`);
 });
 
 app.get("/", (req, res) => {
-  res.send(`Hello World!!!... this is server running on port ${Port}`);
+  try {
+    res.send(`Hello World!!!... this is server running on port ${port}`);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Internal Server Error");
+  }
 });
