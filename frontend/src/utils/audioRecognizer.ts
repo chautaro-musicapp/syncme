@@ -60,7 +60,7 @@ export class AudioRecognizer {
       try {
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.wav');
-        formData.append('api_token', '613c8af850a263d2711d0267cdde41aa'); // Replace with your Audd.io API token
+        formData.append('api_token', 'f59d9d5e6fca5598b60e1fe2591c2515'); // Replace with your Audd.io API token
         const response = await fetch('https://api.audd.io/', {
           method: 'POST',
           body: formData,

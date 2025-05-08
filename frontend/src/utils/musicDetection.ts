@@ -370,7 +370,7 @@ export const recognizeMusic = async (audioBlob: Blob): Promise<any> => {
   try {
     const formData = new FormData();
     formData.append('file', audioBlob);
-    formData.append('api_token', "613c8af850a263d2711d0267cdde41aa");//872cb77c2ee7145396020c4b7648501a
+    formData.append('api_token', "f59d9d5e6fca5598b60e1fe2591c2515");//872cb77c2ee7145396020c4b7648501a
     formData.append('return', 'apple_music,spotify');
 
     const response = await fetch('https://api.audd.io/', { method: 'POST', body: formData });
